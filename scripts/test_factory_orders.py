@@ -40,6 +40,30 @@ def fixture_workbook(qty=5, info='01 * 5 PCS', price=1.2, offset=0, shade=None, 
 
 
 class FactoryTests(unittest.TestCase):
+    def test_published_products_export_can_be_uploaded_after_filling_order_details(self):
+        product = dict(brand='Brand', name='Lip gloss', price=1.2, image='photo',
+                       colors=['01', 'warm pink-2'], published=True, archived_at=0,
+                       order_count=0, revenue=0, units_sold=0)
+        with tempfile.TemporaryDirectory() as directory:
+            picture = Path(directory) / 'photo.png'
+            Image.new('RGB', (30, 60), 'white').save(picture)
+            with patch.object(test_seo.server, 'make_thumbnail', return_value=picture):
+                data = test_seo.server.build_sales_report_workbook([product, product])
+        for heading in ('Shade/Type', 'Colors / Shade options'):
+            with self.subTest(heading=heading):
+                book = load_workbook(io.BytesIO(data))
+                book.active['E5'] = heading
+                book.active['J6'] = '01 * 3 PCS'
+                edited = io.BytesIO()
+                book.save(edited)
+                book.close()
+                report, errors, lines = factory.validate_factory_files([
+                    dict(filename='published.xlsx', data=edited.getvalue()),
+                ])
+                self.assertFalse(errors)
+                self.assertEqual(report[0]['item_rows'], 1)
+                self.assertEqual([(line['shade'], line['qty']) for line in lines], [('01', 3)])
+
     def test_both_header_locations_and_shade_formats(self):
         files = [dict(filename='first.xlsx', data=fixture_workbook(qty=6, info='01 * 5 PCS\nwarm pink-2 * 1 PCS')),
                  dict(filename='second.xlsx', data=fixture_workbook(offset=3, shade='01'))]

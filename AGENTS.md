@@ -143,6 +143,8 @@ easier.
 - Factory orders is a separate authenticated admin menu for adjusted customer
   workbooks. It never imports catalog data or changes original orders. Validate
   every file/row in a batch and return all errors with filename/sheet/row/reason.
+  Published Products reports are accepted after filling Order details. Blank order
+  cells are skipped, and quantities come from the selected Shade/Type lines.
   No partial batch may be merged. Read headers by name within the first 25 rows;
   use Informations shade quantities and verify their sum against QTY. Preserve
   leading zeros, spaces and hyphens in shades. Group by exact trimmed Brand +
@@ -154,7 +156,7 @@ easier.
   files, 50 MB per file, 180 MB total. Run `python -m scripts.test_factory_orders`.
 - The admin sales report shows the top 20 products by cumulative quantity in
   submitted orders and supports an authenticated Excel export of currently published, non-archived products.
-  Include all stored Colors / Shade options and a blank editable Order details
+  Put Shade/Type after Picture using the storefront shade rules, and include a blank editable Order details
   column for customer shade quantities (one `01 * 5 PCS` entry per line).
   Shades are literal text, split only on `/`, never limited to 18 choices.
   The export includes unsold products with zero values and keeps `Units Sold`

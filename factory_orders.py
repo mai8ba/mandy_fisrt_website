@@ -95,9 +95,17 @@ def validate_factory_files(files):
                 if headers is None:
                     continue
                 found = True
-                required = ['brand', 'item name', 'picture', 'unit price', 'qty']
+                catalog = 'sales rank' in headers and ('price (usd)' in headers or 'order details' in headers)
+                price_field = 'price (usd)' if catalog else 'unit price'
+                details_field = 'order details' if catalog else 'informations'
+                details_label = 'Order details' if catalog else 'Informations'
+                shade_field = 'shade/type'
+                if catalog and shade_field not in headers and 'colors / shade options' in headers:
+                    shade_field = 'colors / shade options'
+                required = ['brand', 'item name', 'picture', price_field]
+                required += [details_field, shade_field] if catalog else ['qty']
                 missing = [field for field in required if field not in headers]
-                if 'informations' not in headers and 'shade/type' not in headers:
+                if not catalog and 'informations' not in headers and shade_field not in headers:
                     missing.append('Informations or Shade/Type')
                 if missing:
                     for field in missing:
@@ -111,11 +119,14 @@ def validate_factory_files(files):
                 for row in sheet.iter_rows(min_row=header_row + 1):
                     number = row[0].row
                     value = lambda field: row[headers[field]].value if field in headers else None
+                    information = text(value(details_field))
+                    if catalog and not information:
+                        continue
                     # Footer totals are not order detail, even when their formulas have errors.
                     footer_labels = {'total', 'total product cost', 'shipping cost', 'shipping country', 'shipping weight (kg)'}
                     if not text(value('brand')) and not text(value('item name')) and any(text(cell.value).casefold() in footer_labels for cell in row):
                         continue
-                    if not any(text(value(field)) for field in ('brand', 'item name', 'unit price', 'qty')):
+                    if not catalog and not any(text(value(field)) for field in ('brand', 'item name', 'unit price', 'qty')):
                         continue
                     start_errors = len(report['errors'])
                     brand, name_value = text(value('brand')), text(value('item name'))
@@ -123,7 +134,8 @@ def validate_factory_files(files):
                         if not item:
                             error('Required value is empty.', sheet.title, number, field)
                     price, quantity = None, None
-                    for field, integer in [('unit price', False), ('qty', True)]:
+                    numeric_fields = [(price_field, False)] if catalog else [(price_field, False), ('qty', True)]
+                    for field, integer in numeric_fields:
                         try:
                             parsed = positive_number(value(field), integer)
                             if integer:
@@ -133,23 +145,27 @@ def validate_factory_files(files):
                         except ValueError as exc:
                             error(str(exc), sheet.title, number, field)
                     shades = []
-                    information = text(value('informations'))
+                    listed = [s.strip() for s in text(value(shade_field)).splitlines() if s.strip()]
                     if information:
                         for entry in information.splitlines():
                             if not entry.strip():
                                 continue
                             match = re.fullmatch(r'(.+?)\s*\*\s*(\d+)\s*PCS\s*', entry.strip(), re.I)
                             if not match or int(match.group(2)) <= 0:
-                                error('Invalid shade quantity: ' + entry.strip() + '. Use Shade * 5 PCS.', sheet.title, number, 'Informations')
+                                error('Invalid shade quantity: ' + entry.strip() + '. Use Shade * 5 PCS.', sheet.title, number, details_label)
                             else:
                                 shades.append((match.group(1).strip(), int(match.group(2))))
-                        if quantity is not None and sum(q for _, q in shades) != quantity:
-                            error('Shade quantities total ' + str(sum(q for _, q in shades)) + ', but QTY is ' + str(quantity) + '.', sheet.title, number, 'Informations / QTY')
-                        listed = [s.strip() for s in text(value('shade/type')).splitlines() if s.strip()]
-                        if listed and set(listed) != {s for s, _ in shades}:
+                        shade_total = sum(q for _, q in shades)
+                        ordered = {shade for shade, _ in shades}
+                        if catalog:
+                            quantity = shade_total
+                            if listed and not ordered.issubset(listed):
+                                error('Use shades listed in Shade/Type.', sheet.title, number, details_label)
+                        elif quantity is not None and shade_total != quantity:
+                            error('Shade quantities total ' + str(shade_total) + ', but QTY is ' + str(quantity) + '.', sheet.title, number, 'Informations / QTY')
+                        if not catalog and listed and set(listed) != ordered:
                             error('Shade/Type does not match the shades in Informations.', sheet.title, number, 'Shade/Type')
                     else:
-                        listed = [s.strip() for s in text(value('shade/type')).splitlines() if s.strip()]
                         if len(listed) == 1 and quantity is not None:
                             shades = [(listed[0], quantity)]
                         else:

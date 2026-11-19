@@ -1053,7 +1053,7 @@
     layout(`<main class="admin factory-page">
       <div class="section-title"><h2>Factory order summary</h2><button class="ghost" data-logout-admin>Logout</button></div>
       ${adminMenuHTML()}
-      <label class="factory-upload-label">Customer order Excel files (.xlsx)<input type="file" accept=".xlsx" multiple data-factory-files ${state.factoryBusy ? "disabled" : ""}></label>
+      <label class="factory-upload-label">Customer orders or completed Published Products reports (.xlsx)<input type="file" accept=".xlsx" multiple data-factory-files ${state.factoryBusy ? "disabled" : ""}></label>
       <ul class="factory-file-list">${state.factoryFiles.map((file, index) => {
         const report = state.factoryReports[index];
         return `<li><span>${escapeHTML(file.name)}</span><small>${(file.size / 1024 / 1024).toFixed(1)} MB${report ? ` · ${report.errors.length ? "Needs correction" : "Passed"}` : ""}</small><button type="button" class="ghost" data-factory-remove="${index}" aria-label="Remove ${escapeHTML(file.name)}" ${state.factoryBusy ? "disabled" : ""}>Remove</button></li>`;

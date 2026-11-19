@@ -54,6 +54,8 @@ class SalesReportTests(unittest.TestCase):
             ],
         )
         self.db.execute("ALTER TABLE products ADD COLUMN colors_json TEXT DEFAULT '[]'")
+        self.db.execute("ALTER TABLE products ADD COLUMN description TEXT DEFAULT ''")
+        self.db.execute("UPDATE products SET description = 'Colors: 007/08 size: 1cm' WHERE id = 'p2'")
         self.shades = [f'{i:02d}' for i in range(1, 29)] + ['warm pink', '1-2-3', '=literal']
         self.db.execute("UPDATE products SET colors_json=? WHERE id='p1'", (json.dumps(self.shades),))
 
@@ -85,22 +87,24 @@ class SalesReportTests(unittest.TestCase):
         sheet = workbook["Published Products"]
         self.assertEqual(sheet["A1"].value, "Published Products Sales Statistics")
         self.assertEqual(sheet["K6"].value, 5)
-        self.assertEqual(sheet["H6"].value, 19)
+        self.assertEqual(sheet["I6"].value, 19)
         self.assertEqual(sheet["K8"].value, 0)
         self.assertEqual(sheet["K5"].value, "Units Sold")
-        self.assertEqual(sheet["I5"].value, "Colors / Shade options")
+        self.assertEqual(sheet["E5"].value, "Shade/Type")
         self.assertEqual(sheet["J5"].value, "Order details")
-        self.assertEqual(sheet["I6"].value.splitlines(), self.shades)
-        self.assertEqual(sheet["I6"].data_type, 's')
+        self.assertEqual(sheet["E6"].value.splitlines(), self.shades)
+        self.assertEqual(sheet["E7"].value, "007\n08")
+        self.assertEqual(sheet["E8"].value, "Default")
+        self.assertEqual(sheet["E6"].data_type, 's')
         self.assertIsNone(sheet["J6"].value)
         self.assertEqual(sheet["J6"].number_format, '@')
         self.assertEqual(sheet.auto_filter.ref, 'A5:K8')
         self.assertEqual(sheet['K10'].value, '=SUM(K6:K8)')
-        self.assertEqual(sheet['H10'].value, '=SUM(H6:H8)')
+        self.assertEqual(sheet['I10'].value, '=SUM(I6:I8)')
         self.assertEqual(sheet.max_column, 11)
         self.assertNotIn('SKU', [cell.value for cell in sheet[5]])
         self.assertEqual(sheet["A1"].font.name, "Arial")
-        self.assertEqual(sheet["H6"].font.name, "Arial")
+        self.assertEqual(sheet["I6"].font.name, "Arial")
         self.assertTrue(all(cell.font.name == 'Arial' for row in sheet for cell in row if cell.value is not None))
         self.assertEqual(workbook._named_styles['Normal'].font.name, 'Arial')
         from zipfile import ZipFile
@@ -144,7 +148,7 @@ class SalesReportTests(unittest.TestCase):
             sheet = workbook["Published Products"]
             self.assertEqual(sheet.auto_filter.ref, "A5:K6")
             self.assertEqual(sheet["C6"].value, "Unsold product")
-            self.assertEqual(sheet["F6"].value, "Published")
+            self.assertEqual(sheet["G6"].value, "Published")
             self.assertEqual(sheet["K6"].value, 0)
         finally:
             workbook.close()

@@ -54,7 +54,7 @@ HTTPS_ENABLED = os.environ.get("HTTPS", "0") == "1"
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://bebeauty.top").rstrip("/")
 
 SEO_SITE_NAME = "BeBeauty Wholesale Catalog"
-ASSET_VERSION = "20261119-published-export"
+ASSET_VERSION = "20261119-shade-export"
 FACTORY_UPLOAD_LOCK = threading.Lock()
 SEO_HOME_DESCRIPTION = (
     "Browse wholesale cosmetics and beauty products by brand, category, "
@@ -773,6 +773,7 @@ def sales_report_rows(conn, limit=20, include_zero=False, sort_by_brand=False, *
             p.image,
             p.price,
             p.colors_json,
+            p.description,
             COALESCE(sales.units_sold, 0) AS units_sold,
             COALESCE(sales.order_count, 0) AS order_count,
             COALESCE(sales.revenue, 0) AS revenue,
@@ -797,6 +798,7 @@ def sales_report_rows(conn, limit=20, include_zero=False, sort_by_brand=False, *
             "image": row["image"],
             "price": round(float(row["price"] or 0), 2),
             "colors": json.loads(row["colors_json"] or "[]"),
+            "description": row["description"],
             "units_sold": int(row["units_sold"] or 0),
             "order_count": int(row["order_count"] or 0),
             "revenue": round(float(row["revenue"] or 0), 2),
@@ -1518,18 +1520,18 @@ def build_sales_report_workbook(rows):
     ws["B3"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now()))
     ws["A3"].font = Font(name="Arial", family=2, bold=True)
     ws.merge_cells("A4:K4")
-    ws["A4"] = "Order details: enter one shade and quantity per line, for example 01 * 5 PCS."
+    ws["A4"] = "Order details: enter one Shade/Type and quantity per line, e.g. 01 * 5 PCS. Leave unordered items blank."
 
     headers = [
         "Sales Rank",
         "Brand",
         "Item Name",
         "Picture",
+        "Shade/Type",
         "Price (USD)",
         "Status",
         "Order Count",
         "Sales Revenue (USD)",
-        "Colors / Shade options",
         "Order details",
         "Units Sold",
     ]
@@ -1549,21 +1551,21 @@ def build_sales_report_workbook(rows):
                 item["brand"],
                 item["name"],
                 "",
+                "\n".join(product_shades(item)),
                 item["price"],
                 status,
                 item["order_count"],
                 item["revenue"],
-                "\n".join(split_color_text("/".join(item.get("colors") or []))),
                 "",
                 item["units_sold"],
             ]
         )
-        for column in (2, 3, 9):
+        for column in (2, 3, 5):
             ws.cell(row_number, column).data_type = "s"
-        ws.cell(row_number, 9).number_format = "@"
+        ws.cell(row_number, 5).number_format = "@"
         ws.cell(row_number, 10).number_format = "@"
         ws.cell(row_number, 10).fill = PatternFill("solid", fgColor="EAF3FF")
-        shade_lines = ws.cell(row_number, 9).value.count("\n") + 1
+        shade_lines = ws.cell(row_number, 5).value.count("\n") + 1
         ws.row_dimensions[row_number].height = min(409, max(76, shade_lines * 14 + 8))
         image_path = make_thumbnail(item["image"], 96)
         if image_path:
@@ -1579,11 +1581,11 @@ def build_sales_report_workbook(rows):
 
     data_end_row = max(header_row + 1, header_row + len(rows))
     totals_row = header_row + len(rows) + 2
-    ws.cell(totals_row, 7, "Published products total")
-    ws.cell(totals_row, 7).font = Font(name="Arial", family=2, bold=True)
-    ws.cell(totals_row, 8, f"=SUM(H{header_row + 1}:H{data_end_row})")
-    ws.cell(totals_row, 8).number_format = "$0.00"
+    ws.cell(totals_row, 8, "Published products total")
     ws.cell(totals_row, 8).font = Font(name="Arial", family=2, bold=True)
+    ws.cell(totals_row, 9, f"=SUM(I{header_row + 1}:I{data_end_row})")
+    ws.cell(totals_row, 9).number_format = "$0.00"
+    ws.cell(totals_row, 9).font = Font(name="Arial", family=2, bold=True)
     ws.cell(totals_row, 11, f"=SUM(K{header_row + 1}:K{data_end_row})")
     ws.cell(totals_row, 11).font = Font(name="Arial", family=2, bold=True)
 
@@ -1592,11 +1594,11 @@ def build_sales_report_workbook(rows):
         "B": 18,
         "C": 52,
         "D": 14,
-        "E": 14,
-        "F": 12,
-        "G": 14,
-        "H": 20,
-        "I": 36,
+        "E": 36,
+        "F": 14,
+        "G": 12,
+        "H": 14,
+        "I": 20,
         "J": 30,
         "K": 14,
     }
@@ -1612,9 +1614,9 @@ def build_sales_report_workbook(rows):
             font.charset = None
             cell.font = font
     for row in range(header_row + 1, header_row + len(rows) + 1):
-        ws[f"E{row}"].number_format = "$0.00"
-        ws[f"G{row}"].number_format = "#,##0"
-        ws[f"H{row}"].number_format = "$0.00"
+        ws[f"F{row}"].number_format = "$0.00"
+        ws[f"H{row}"].number_format = "#,##0"
+        ws[f"I{row}"].number_format = "$0.00"
         ws[f"K{row}"].number_format = "#,##0"
     ws.freeze_panes = "A6"
     ws.auto_filter.ref = f"A{header_row}:K{header_row + max(len(rows), 1)}"
