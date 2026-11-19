@@ -55,6 +55,8 @@
     salesReportLoading: false,
     salesReportError: "",
     salesReportRequested: false,
+    salesExportPending: false,
+    salesExportStatus: "",
     loading: true,
   };
 
@@ -104,13 +106,15 @@
     return payload;
   }
 
-  async function apiBlob(path, payload) {
+  async function apiFile(path, payload) {
     const response = await fetch(path, {
-      method: "POST",
       credentials: "same-origin",
       cache: "no-store",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      ...(payload === undefined ? {} : {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }),
     });
     if (!response.ok) {
       let error = `Request failed: ${response.status}`;
@@ -120,7 +124,18 @@
       } catch {}
       throw new Error(error);
     }
-    return response.blob();
+    return response;
+  }
+
+  function downloadFile(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
   async function uploadImageFiles(files) {
@@ -223,6 +238,35 @@
     } finally {
       state.salesReportLoading = false;
       if (state.view === "admin" && isAdminAuthed) renderAdmin();
+    }
+  }
+
+  async function exportSalesReport() {
+    if (!isAdminAuthed || state.salesExportPending) return;
+
+    function updateStatus(message, pending) {
+      state.salesExportStatus = message;
+      state.salesExportPending = pending;
+      const button = document.querySelector("[data-sales-export]");
+      const status = document.querySelector("[data-sales-export-status]");
+      if (button) button.disabled = pending;
+      if (status) status.textContent = message;
+    }
+
+    updateStatus("Preparing the Excel file…", true);
+    try {
+      const response = await apiFile("/api/admin/sales-report/excel");
+      if (!response.headers.get("Content-Type")?.startsWith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) {
+        throw new Error("The server returned an unexpected file. Please try again.");
+      }
+      const filename = response.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/i)?.[1];
+      downloadFile(await response.blob(), filename || "sales-report-all-products.xlsx");
+      updateStatus("Excel download started.", false);
+    } catch (error) {
+      const message = error.message === "Authentication required"
+        ? "Your session has expired. Sign in again to export."
+        : error.message || "Unable to download the Excel file. Please try again.";
+      updateStatus(message, false);
     }
   }
 
@@ -950,9 +994,10 @@
             <div><h3>Top 20 best-selling products</h3><p class="small">Ranked by quantity in submitted orders.</p></div>
             <div class="sales-report-actions">
               <button class="ghost" type="button" data-sales-refresh>Refresh statistics</button>
-              <a class="primary" href="/api/admin/sales-report/excel">Export all products</a>
+              <button class="primary" type="button" data-sales-export ${state.salesExportPending ? "disabled" : ""}>Export all products</button>
             </div>
           </div>
+          <div class="small" role="status" data-sales-export-status>${escapeHTML(state.salesExportStatus)}</div>
           ${salesReportHTML()}
         </section>
         <div class="admin-grid">
@@ -1064,15 +1109,8 @@
     state.factoryStatus = "Generating factory order...";
     renderFactoryOrders();
     try {
-      const blob = await apiBlob("/api/admin/factory-orders/merge", { batch_token: state.factoryToken });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `factory-order-${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}.xlsx`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      const response = await apiFile("/api/admin/factory-orders/merge", { batch_token: state.factoryToken });
+      downloadFile(await response.blob(), `factory-order-${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}.xlsx`);
       state.factoryStatus = "Factory order downloaded. Sheet 2 lists the source filenames.";
     } catch (error) {
       state.factoryStatus = error.message;
@@ -1439,6 +1477,10 @@
       if (target.dataset.adminPage === "next") state.adminPage = Math.min(totalPages, state.adminPage + 1);
       if (target.dataset.adminPage === "last") state.adminPage = totalPages;
       renderAdmin();
+      return;
+    }
+    if (target.dataset.salesExport !== undefined) {
+      await exportSalesReport();
       return;
     }
     if (target.dataset.salesRefresh !== undefined) {

@@ -54,7 +54,7 @@ HTTPS_ENABLED = os.environ.get("HTTPS", "0") == "1"
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://bebeauty.top").rstrip("/")
 
 SEO_SITE_NAME = "BeBeauty Wholesale Catalog"
-ASSET_VERSION = "20261103-order-validation"
+ASSET_VERSION = "20261119-sales-export"
 FACTORY_UPLOAD_LOCK = threading.Lock()
 SEO_HOME_DESCRIPTION = (
     "Browse wholesale cosmetics and beauty products by brand, category, "
@@ -1556,8 +1556,8 @@ def build_sales_report_workbook(rows):
                 item["units_sold"],
             ]
         )
-        ws.row_dimensions[row_number].height = 76
-        ws.cell(row_number, 9).data_type = "s"
+        for column in (2, 3, 9):
+            ws.cell(row_number, column).data_type = "s"
         ws.cell(row_number, 9).number_format = "@"
         ws.cell(row_number, 10).number_format = "@"
         ws.cell(row_number, 10).fill = PatternFill("solid", fgColor="EAF3FF")
@@ -1567,11 +1567,10 @@ def build_sales_report_workbook(rows):
         if image_path:
             try:
                 image = XLImage(str(image_path))
-                target_width = 96
-                if image.width:
-                    image.height = int(image.height * (target_width / image.width))
-                    image.width = target_width
-                    ws.row_dimensions[row_number].height = max(ws.row_dimensions[row_number].height, image.height * 0.75 + 8)
+                scale = min(1, 96 / image.width, 96 / image.height)
+                image.width = max(1, round(image.width * scale))
+                image.height = max(1, round(image.height * scale))
+                ws.row_dimensions[row_number].height = max(ws.row_dimensions[row_number].height, image.height * 0.75 + 8)
                 ws.add_image(image, f"D{row_number}")
             except Exception:
                 pass

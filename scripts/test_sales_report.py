@@ -1,7 +1,10 @@
 import io
 import json
 import sqlite3
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 import server
 
@@ -102,6 +105,29 @@ class SalesReportTests(unittest.TestCase):
         with ZipFile(io.BytesIO(workbook_data)) as archive:
             self.assertNotIn(b'<scheme', archive.read('xl/styles.xml'))
         workbook.close()
+
+    def test_product_text_is_literal_and_portrait_images_fit(self):
+        from openpyxl import load_workbook
+        from openpyxl.utils.units import pixels_to_EMU
+        from PIL import Image
+
+        self.db.execute("UPDATE products SET brand='=Brand', name='#N/A' WHERE id='p1'")
+        rows = server.sales_report_rows(self.db)
+        row = next(row for row in rows if row["id"] == "p1")
+        with tempfile.TemporaryDirectory() as directory:
+            image_path = Path(directory) / "portrait.jpg"
+            Image.new("RGB", (24, 96)).save(image_path)
+            with patch.object(server, "make_thumbnail", return_value=image_path):
+                data = server.build_sales_report_workbook([row])
+        with io.BytesIO(data) as stream:
+            workbook = load_workbook(stream)
+            sheet = workbook["All Products"]
+            self.assertEqual((sheet["B6"].value, sheet["B6"].data_type), ("=Brand", "s"))
+            self.assertEqual((sheet["C6"].value, sheet["C6"].data_type), ("#N/A", "s"))
+            self.assertEqual(sheet._images[0].anchor.ext.cx, pixels_to_EMU(24))
+            self.assertEqual(sheet._images[0].anchor.ext.cy, pixels_to_EMU(96))
+            self.assertLessEqual(sheet.row_dimensions[6].height, 409)
+            workbook.close()
 
 
 if __name__ == "__main__":
