@@ -153,14 +153,14 @@ easier.
   authenticated admin, and never enter Git or product replication. Limits: 20
   files, 50 MB per file, 180 MB total. Run `python -m scripts.test_factory_orders`.
 - The admin sales report shows the top 20 products by cumulative quantity in
-  submitted orders and supports an authenticated all-products Excel export.
+  submitted orders and supports an authenticated Excel export of currently published, non-archived products.
   Include all stored Colors / Shade options and a blank editable Order details
   column for customer shade quantities (one `01 * 5 PCS` entry per line).
   Shades are literal text, split only on `/`, never limited to 18 choices.
   The export includes unsold products with zero values and keeps `Units Sold`
   as its final column. Export rows default to Brand A-Z, then Item Name and
   SKU, so customers can review one brand at a time; the merchant can sort the
-  full catalog by Units Sold to find the top 20. This is demand data, not
+  published catalog by Units Sold to find the top 20. This is demand data, not
   verified paid-sales data; keep the report read-only and do not change the
   order schema when extending it.
 - Creating an order stores its items in SQLite and sends only the order number

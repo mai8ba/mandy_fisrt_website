@@ -54,7 +54,7 @@ HTTPS_ENABLED = os.environ.get("HTTPS", "0") == "1"
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://bebeauty.top").rstrip("/")
 
 SEO_SITE_NAME = "BeBeauty Wholesale Catalog"
-ASSET_VERSION = "20261119-sales-export"
+ASSET_VERSION = "20261119-published-export"
 FACTORY_UPLOAD_LOCK = threading.Lock()
 SEO_HOME_DESCRIPTION = (
     "Browse wholesale cosmetics and beauty products by brand, category, "
@@ -726,11 +726,12 @@ def is_new_arrival(product, current_time=None):
     )
 
 
-def sales_report_rows(conn, limit=20, include_zero=False, sort_by_brand=False):
-    """Return submitted-order demand totals, optionally including unsold products."""
+def sales_report_rows(conn, limit=20, include_zero=False, sort_by_brand=False, *, published_only=False):
+    """Return submitted-order demand totals for the requested catalog scope."""
     limit_sql = "" if limit is None else "LIMIT ?"
     params = () if limit is None else (max(1, min(10000, int(limit))),)
     join_sql = "LEFT JOIN" if include_zero else "JOIN"
+    visibility_sql = "WHERE p.published = 1 AND p.archived_at = 0" if published_only else ""
     order_sql = (
         "ORDER BY p.brand COLLATE NOCASE ASC, p.name COLLATE NOCASE ASC, "
         "p.sku COLLATE NOCASE ASC, p.id ASC"
@@ -780,6 +781,7 @@ def sales_report_rows(conn, limit=20, include_zero=False, sort_by_brand=False):
             p.archived_at
         FROM products p
         {join_sql} sales ON sales.product_id = p.id
+        {visibility_sql}
         GROUP BY p.id
         {order_sql}
         {limit_sql}
@@ -1502,15 +1504,15 @@ def build_sales_report_workbook(rows):
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "All Products"
+    ws.title = "Published Products"
     default_font = Font(name="Arial", size=11, family=2)
     wb._fonts[0] = default_font
     wb._named_styles["Normal"].font = default_font
 
     ws.merge_cells("A1:K1")
-    ws["A1"] = "All Products Sales Statistics"
+    ws["A1"] = "Published Products Sales Statistics"
     ws["A1"].font = Font(name="Arial", family=2, size=16, bold=True)
-    ws["A2"] = "All catalog products, sorted by Brand A-Z. Sort Units Sold to find the top 20."
+    ws["A2"] = "Published products, sorted by Brand A-Z. Sort Units Sold to find the top 20."
     ws["A2"].font = Font(name="Arial", family=2, italic=True, color="6B5E55")
     ws["A3"] = "Generated at"
     ws["B3"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now()))
@@ -1577,7 +1579,7 @@ def build_sales_report_workbook(rows):
 
     data_end_row = max(header_row + 1, header_row + len(rows))
     totals_row = header_row + len(rows) + 2
-    ws.cell(totals_row, 7, "All products total")
+    ws.cell(totals_row, 7, "Published products total")
     ws.cell(totals_row, 7).font = Font(name="Arial", family=2, bold=True)
     ws.cell(totals_row, 8, f"=SUM(H{header_row + 1}:H{data_end_row})")
     ws.cell(totals_row, 8).number_format = "$0.00"
@@ -2169,9 +2171,9 @@ Use the cart on {PUBLIC_BASE_URL}/ to create an order number, then continue the 
     def handle_sales_report_download(self):
         try:
             with connect() as conn:
-                rows = sales_report_rows(conn, None, include_zero=True, sort_by_brand=True)
+                rows = sales_report_rows(conn, None, include_zero=True, sort_by_brand=True, published_only=True)
             workbook_data = build_sales_report_workbook(rows)
-            filename = f"sales-report-all-products-{time.strftime('%Y%m%d', time.localtime())}.xlsx"
+            filename = f"sales-report-published-products-{time.strftime('%Y%m%d', time.localtime())}.xlsx"
             return binary_response(
                 self,
                 200,

@@ -260,7 +260,7 @@
         throw new Error("The server returned an unexpected file. Please try again.");
       }
       const filename = response.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/i)?.[1];
-      downloadFile(await response.blob(), filename || "sales-report-all-products.xlsx");
+      downloadFile(await response.blob(), filename || "sales-report-published-products.xlsx");
       updateStatus("Excel download started.", false);
     } catch (error) {
       const message = error.message === "Authentication required"
@@ -994,7 +994,7 @@
             <div><h3>Top 20 best-selling products</h3><p class="small">Ranked by quantity in submitted orders.</p></div>
             <div class="sales-report-actions">
               <button class="ghost" type="button" data-sales-refresh>Refresh statistics</button>
-              <button class="primary" type="button" data-sales-export ${state.salesExportPending ? "disabled" : ""}>Export all products</button>
+              <button class="primary" type="button" data-sales-export ${state.salesExportPending ? "disabled" : ""}>Export published products</button>
             </div>
           </div>
           <div class="small" role="status" data-sales-export-status>${escapeHTML(state.salesExportStatus)}</div>

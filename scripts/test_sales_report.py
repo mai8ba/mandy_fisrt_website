@@ -1,7 +1,9 @@
+import http.client
 import io
 import json
 import sqlite3
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -11,7 +13,7 @@ import server
 
 class SalesReportTests(unittest.TestCase):
     def setUp(self):
-        self.db = sqlite3.connect(":memory:")
+        self.db = sqlite3.connect(":memory:", check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(
             """
@@ -74,14 +76,14 @@ class SalesReportTests(unittest.TestCase):
         self.assertEqual([row["id"] for row in brand_rows], ["p1", "p2", "p3"])
 
     def test_report_workbook_has_expected_sheet_and_font(self):
-        rows = server.sales_report_rows(self.db, None, include_zero=True, sort_by_brand=True)
+        rows = server.sales_report_rows(self.db, None, include_zero=True, sort_by_brand=True, published_only=True)
         workbook_data = server.build_sales_report_workbook(rows)
         self.assertGreater(len(workbook_data), 0)
         from openpyxl import load_workbook
 
         workbook = load_workbook(io.BytesIO(workbook_data), read_only=False)
-        sheet = workbook["All Products"]
-        self.assertEqual(sheet["A1"].value, "All Products Sales Statistics")
+        sheet = workbook["Published Products"]
+        self.assertEqual(sheet["A1"].value, "Published Products Sales Statistics")
         self.assertEqual(sheet["K6"].value, 5)
         self.assertEqual(sheet["H6"].value, 19)
         self.assertEqual(sheet["K8"].value, 0)
@@ -106,6 +108,47 @@ class SalesReportTests(unittest.TestCase):
             self.assertNotIn(b'<scheme', archive.read('xl/styles.xml'))
         workbook.close()
 
+    def test_sales_download_excludes_unpublished_archived_and_deleted_products(self):
+        from openpyxl import load_workbook
+
+        self.db.execute("UPDATE products SET archived_at=1 WHERE id='p1'")
+        self.db.execute("UPDATE products SET published=0 WHERE id='p2'")
+        self.db.execute("INSERT INTO orders VALUES (?, ?, ?)", (
+            "O4", json.dumps([{"id": "deleted", "qty": 99, "price": 5}]), 400,
+        ))
+        self.db.commit()
+
+        with patch.object(server, "connect", return_value=self.db):
+            with server.ThreadingHTTPServer(("127.0.0.1", 0), server.CatalogHandler) as httpd:
+                thread = threading.Thread(target=httpd.serve_forever)
+                thread.start()
+                client = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=5)
+                try:
+                    client.request("GET", "/api/admin/sales-report/excel")
+                    response = client.getresponse()
+                    self.assertEqual(response.status, 401)
+                    response.read()
+                    with patch.object(server.CatalogHandler, "current_user", return_value="admin"):
+                        client.request("GET", "/api/admin/sales-report/excel")
+                        response = client.getresponse()
+                        self.assertEqual(response.status, 200)
+                        self.assertIn("sales-report-published-products-", response.getheader("Content-Disposition"))
+                        data = response.read()
+                finally:
+                    client.close()
+                    httpd.shutdown()
+                    thread.join()
+
+        workbook = load_workbook(io.BytesIO(data))
+        try:
+            sheet = workbook["Published Products"]
+            self.assertEqual(sheet.auto_filter.ref, "A5:K6")
+            self.assertEqual(sheet["C6"].value, "Unsold product")
+            self.assertEqual(sheet["F6"].value, "Published")
+            self.assertEqual(sheet["K6"].value, 0)
+        finally:
+            workbook.close()
+
     def test_product_text_is_literal_and_portrait_images_fit(self):
         from openpyxl import load_workbook
         from openpyxl.utils.units import pixels_to_EMU
@@ -121,7 +164,7 @@ class SalesReportTests(unittest.TestCase):
                 data = server.build_sales_report_workbook([row])
         with io.BytesIO(data) as stream:
             workbook = load_workbook(stream)
-            sheet = workbook["All Products"]
+            sheet = workbook["Published Products"]
             self.assertEqual((sheet["B6"].value, sheet["B6"].data_type), ("=Brand", "s"))
             self.assertEqual((sheet["C6"].value, sheet["C6"].data_type), ("#N/A", "s"))
             self.assertEqual(sheet._images[0].anchor.ext.cx, pixels_to_EMU(24))
